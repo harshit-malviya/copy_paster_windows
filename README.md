@@ -49,12 +49,31 @@ python main.py
 
 ## 📦 Building a Standalone Executable (.exe)
 
-To generate a standalone `.exe` that can run on any Windows PC without needing Python installed:
-1. Double-click **`build_exe.bat`**.
-2. When finished, find your application in:
-   ```
-   dist\ClickToPaste\ClickToPaste.exe
-   ```
+### Option 1: Automatic Build (Batch Script)
+Simply double-click **`build_exe.bat`**.
+
+---
+
+### Option 2: Manual Build via Terminal
+
+Make sure your virtual environment is active:
+```powershell
+.\.venv\Scripts\activate
+```
+
+#### Method A: Directory-based Build (Fast startup & recommended)
+```powershell
+pyinstaller --noconfirm --onedir --windowed --name "ClickToPaste" --collect-all "customtkinter" main.py
+```
+> The output executable will be located in:  
+> `dist\ClickToPaste\ClickToPaste.exe`
+
+#### Method B: Single-file Executable (Portable single `.exe`)
+```powershell
+pyinstaller --noconfirm --onefile --windowed --name "ClickToPaste" --collect-all "customtkinter" main.py
+```
+> The standalone executable will be located in:  
+> `dist\ClickToPaste.exe`
 
 ---
 

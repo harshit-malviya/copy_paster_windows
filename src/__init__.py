@@ -1,0 +1,1 @@
+"""Click-to-Paste package."""

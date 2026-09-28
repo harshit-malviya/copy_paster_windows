@@ -25,6 +25,7 @@ from src.config import (
 )
 from src.pattern_engine import PatternEngine
 from src.queue_manager import QueueManager
+from src.splash import SplashScreen
 
 class POINT(ctypes.Structure):
     _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
@@ -107,14 +108,23 @@ class ClickPasteApp(ctk.CTk):
             hwnd=self._get_window_hwnd(),
         )
 
+        # Initially withdraw (hide) main window while splash screen runs
+        self.withdraw()
+
         self._build_ui()
         self.controller.start_listeners()
-
-        # Mouse coordinate polling for UI helper
         self._poll_mouse_coords()
+
+        # Display splash screen before revealing main window
+        self.splash = SplashScreen(self, on_complete=self._on_splash_done, duration_ms=1200)
 
         # Handle window close cleanup
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _on_splash_done(self):
+        self.deiconify()
+        self.lift()
+        self.focus_force()
 
     def _get_window_hwnd(self) -> Optional[int]:
         try:

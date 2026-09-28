@@ -70,19 +70,20 @@ Make sure your virtual environment is active:
 .\.venv\Scripts\activate
 ```
 
-#### Method A: Directory-based Build (Fast startup & recommended)
+#### Recommended: Build using the pre-configured `.spec` file
+This automatically embeds the custom logo icon, splash screen assets, and produces the single-file executable:
 ```powershell
-pyinstaller --noconfirm --onedir --windowed --name "ClickToPaste" --icon "assets/icon.ico" --add-data "assets;assets" --collect-all "customtkinter" main.py
+pyinstaller --noconfirm ClickToPaste.spec
 ```
-> The output executable will be located in:  
-> `dist\ClickToPaste\ClickToPaste.exe`
+> The standalone executable will be generated at:  
+> `dist\ClickToPaste.exe`
 
-#### Method B: Single-file Executable (Portable single `.exe`)
+---
+
+#### Alternative: Direct Command Line (Single-file)
 ```powershell
 pyinstaller --noconfirm --onefile --windowed --name "ClickToPaste" --icon "assets/icon.ico" --add-data "assets;assets" --collect-all "customtkinter" main.py
 ```
-> The standalone executable will be located in:  
-> `dist\ClickToPaste.exe`
 
 ---
 

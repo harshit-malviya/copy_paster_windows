@@ -19,6 +19,13 @@ from src.gui import ClickPasteApp
 from src.pattern_engine import PatternEngine
 from src.queue_manager import QueueManager
 
+# Close bootloader splash if present
+try:
+    import pyi_splash
+    pyi_splash.close()
+except ImportError:
+    pass
+
 
 def main():
     config = AppConfig()

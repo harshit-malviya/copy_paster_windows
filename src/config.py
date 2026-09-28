@@ -27,6 +27,24 @@ POINT_ACTIONS = [
     POINT_ACTION_DOUBLE_CLICK,
 ]
 
+# Auto-Click item distribution options
+ASSIGN_SEQUENTIAL = "One Item per Location (Sequential)"
+ASSIGN_REPEAT = "Same Item on All Locations"
+
+ASSIGN_OPTIONS = [
+    ASSIGN_SEQUENTIAL,
+    ASSIGN_REPEAT,
+]
+
+# Auto-Click pass execution mode
+PASS_SINGLE = "Single Pass (Stop after points run once)"
+PASS_LOOP = "Loop Sequence (Repeat until queue ends)"
+
+PASS_OPTIONS = [
+    PASS_SINGLE,
+    PASS_LOOP,
+]
+
 
 @dataclass
 class ClickPoint:
@@ -54,3 +72,5 @@ class AppConfig:
     # Auto-clicker mode settings
     auto_item_delay_sec: float = 1.0
     auto_points: List[ClickPoint] = field(default_factory=list)
+    auto_item_assignment: str = ASSIGN_SEQUENTIAL
+    auto_pass_mode: str = PASS_SINGLE

@@ -9,6 +9,8 @@ from pynput import keyboard, mouse
 import pyperclip
 
 from src.config import (
+    ASSIGN_SEQUENTIAL,
+    PASS_SINGLE,
     POINT_ACTION_CLICK,
     POINT_ACTION_DOUBLE_CLICK,
     POINT_ACTION_PASTE,
@@ -109,16 +111,22 @@ class AutoClicker:
 
     def _run_loop(self):
         try:
-            # Initial brief countdown grace period (0.5s) to allow user to switch context if needed
-            if not self._sleep_interruptible(0.5):
+            # Initial brief grace period (0.4s) to allow user to switch context if needed
+            if not self._sleep_interruptible(0.4):
                 return
 
-            while not self._stop_event.is_set() and self.queue_mgr.has_next():
-                current_item = self.queue_mgr.get_current_item()
-                if current_item is None:
-                    break
+            is_sequential = (self.config.auto_item_assignment == ASSIGN_SEQUENTIAL)
+            is_single_pass = (self.config.auto_pass_mode == PASS_SINGLE)
 
-                # Execute the point sequence for this item
+            while not self._stop_event.is_set() and self.queue_mgr.has_next():
+                # If repeat mode, take the item for this entire pass
+                batch_item = None
+                if not is_sequential:
+                    batch_item = self.queue_mgr.get_current_item()
+                    if batch_item is None:
+                        break
+
+                # Execute the point sequence for this pass
                 for pt in self.config.auto_points:
                     if self._stop_event.is_set():
                         return
@@ -129,6 +137,17 @@ class AutoClicker:
 
                     # 2. Perform action
                     if pt.action == POINT_ACTION_PASTE:
+                        if is_sequential:
+                            if not self.queue_mgr.has_next():
+                                # No more items to paste
+                                return
+                            item_to_paste = self.queue_mgr.get_current_item()
+                        else:
+                            item_to_paste = batch_item
+
+                        if item_to_paste is None:
+                            return
+
                         # Click to focus
                         self._mouse_ctl.click(mouse.Button.left, 1)
 
@@ -138,7 +157,7 @@ class AutoClicker:
                             return
 
                         # Copy to clipboard & paste
-                        pyperclip.copy(current_item)
+                        pyperclip.copy(item_to_paste)
                         with self._kb_ctl.pressed(keyboard.Key.ctrl):
                             self._kb_ctl.press('v')
                             self._kb_ctl.release('v')
@@ -159,6 +178,11 @@ class AutoClicker:
 
                         self._play_sound(1300, 30)
 
+                        if is_sequential:
+                            consumed = self.queue_mgr.advance()
+                            if self.on_item_processed and consumed is not None:
+                                self.on_item_processed(consumed, self.queue_mgr.completed, self.queue_mgr.total)
+
                     elif pt.action == POINT_ACTION_CLICK:
                         self._mouse_ctl.click(mouse.Button.left, 1)
                         self._play_sound(900, 20)
@@ -172,21 +196,27 @@ class AutoClicker:
                         if not self._sleep_interruptible(pt.delay_after_ms / 1000.0):
                             return
 
-                # Advance queue
-                consumed = self.queue_mgr.advance()
-                if self.on_item_processed and consumed is not None:
-                    self.on_item_processed(consumed, self.queue_mgr.completed, self.queue_mgr.total)
+                # If repeat mode, advance queue once at the end of the pass
+                if not is_sequential and batch_item is not None:
+                    consumed = self.queue_mgr.advance()
+                    if self.on_item_processed and consumed is not None:
+                        self.on_item_processed(consumed, self.queue_mgr.completed, self.queue_mgr.total)
 
-                # Delay before next item
-                item_delay = max(0.1, self.config.auto_item_delay_sec)
-                if not self._sleep_interruptible(item_delay):
-                    return
+                # If single pass, stop after one complete pass through all points!
+                if is_single_pass:
+                    break
+
+                # If loop sequence and more items exist, wait interval delay before next pass
+                if self.queue_mgr.has_next():
+                    item_delay = max(0.1, self.config.auto_item_delay_sec)
+                    if not self._sleep_interruptible(item_delay):
+                        return
 
         finally:
             self.is_running = False
             if self.on_state_change:
                 self.on_state_change(False)
 
-            if not self.queue_mgr.has_next() and not self._stop_event.is_set():
+            if not self._stop_event.is_set():
                 if self.on_finished:
                     self.on_finished()

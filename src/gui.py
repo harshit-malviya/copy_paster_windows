@@ -12,6 +12,8 @@ import customtkinter as ctk
 from src.auto_clicker import AutoClicker
 from src.click_listener import ClickPasteController
 from src.config import (
+    ASSIGN_OPTIONS,
+    PASS_OPTIONS,
     POINT_ACTION_CLICK,
     POINT_ACTION_DOUBLE_CLICK,
     POINT_ACTION_PASTE,
@@ -488,6 +490,47 @@ class ClickPasteApp(ctk.CTk):
         )
         clear_pts_btn.pack(side="right")
 
+        # Distribution & Run Mode Section
+        mode_cfg_frame = ctk.CTkFrame(self.auto_frame, corner_radius=8)
+        mode_cfg_frame.pack(fill="x", pady=(0, 10))
+        mode_cfg_frame.grid_columnconfigure(1, weight=1)
+
+        mode_cfg_title = ctk.CTkLabel(
+            mode_cfg_frame,
+            text="📋 Distribution & Pass Mode",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#f8fafc",
+        )
+        mode_cfg_title.grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 6))
+
+        # Item assignment dropdown
+        assign_lbl = ctk.CTkLabel(mode_cfg_frame, text="Item Assignment:", font=ctk.CTkFont(size=11))
+        assign_lbl.grid(row=1, column=0, sticky="w", padx=12, pady=4)
+
+        self.assign_combo = ctk.CTkComboBox(
+            mode_cfg_frame,
+            values=ASSIGN_OPTIONS,
+            command=self._on_assign_mode_change,
+            height=28,
+            font=ctk.CTkFont(size=11),
+        )
+        self.assign_combo.set(self.config.auto_item_assignment)
+        self.assign_combo.grid(row=1, column=1, sticky="ew", padx=12, pady=4)
+
+        # Pass execution mode dropdown
+        pass_lbl = ctk.CTkLabel(mode_cfg_frame, text="Execution Pass:", font=ctk.CTkFont(size=11))
+        pass_lbl.grid(row=2, column=0, sticky="w", padx=12, pady=4)
+
+        self.pass_combo = ctk.CTkComboBox(
+            mode_cfg_frame,
+            values=PASS_OPTIONS,
+            command=self._on_pass_mode_change,
+            height=28,
+            font=ctk.CTkFont(size=11),
+        )
+        self.pass_combo.set(self.config.auto_pass_mode)
+        self.pass_combo.grid(row=2, column=1, sticky="ew", padx=12, pady=(4, 10))
+
         # Auto Pacing Interval
         pacing_frame = ctk.CTkFrame(self.auto_frame, corner_radius=8)
         pacing_frame.pack(fill="x", pady=(0, 10))
@@ -495,7 +538,7 @@ class ClickPasteApp(ctk.CTk):
 
         pacing_hdr = ctk.CTkLabel(
             pacing_frame,
-            text="⏱ Interval Between Items:",
+            text="⏱ Interval Between Passes:",
             font=ctk.CTkFont(size=12, weight="bold"),
         )
         pacing_hdr.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 4))
@@ -711,6 +754,12 @@ class ClickPasteApp(ctk.CTk):
             return
 
         self.auto_clicker.toggle()
+
+    def _on_assign_mode_change(self, value: str):
+        self.config.auto_item_assignment = value
+
+    def _on_pass_mode_change(self, value: str):
+        self.config.auto_pass_mode = value
 
     def _on_pacing_change(self, val):
         self.config.auto_item_delay_sec = float(val)

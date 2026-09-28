@@ -43,6 +43,9 @@ class ClickPasteController:
         on_item_pasted: Optional[Callable[[str, int, int], None]] = None,
         on_step_updated: Optional[Callable[[], None]] = None,
         on_queue_finished: Optional[Callable[[], None]] = None,
+        on_capture_hotkey: Optional[Callable[[int, int], None]] = None,
+        on_toggle_hotkey: Optional[Callable[[], None]] = None,
+        on_stop_hotkey: Optional[Callable[[], None]] = None,
     ):
         self.queue_mgr = queue_mgr
         self.pattern_eng = pattern_eng
@@ -52,6 +55,9 @@ class ClickPasteController:
         self.on_item_pasted = on_item_pasted
         self.on_step_updated = on_step_updated
         self.on_queue_finished = on_queue_finished
+        self.on_capture_hotkey = on_capture_hotkey
+        self.on_toggle_hotkey = on_toggle_hotkey
+        self.on_stop_hotkey = on_stop_hotkey
 
         self.is_active: bool = False
         self._app_window_hwnd: Optional[int] = None
@@ -60,6 +66,7 @@ class ClickPasteController:
         self._mouse_listener: Optional[mouse.Listener] = None
         self._keyboard_listener: Optional[keyboard.Listener] = None
         self._kb_controller = keyboard.Controller()
+        self._mouse_controller = mouse.Controller()
         self._lock = threading.Lock()
         self._pasting = False
 
@@ -86,7 +93,7 @@ class ClickPasteController:
             self._keyboard_listener.stop()
 
     def set_active(self, active: bool):
-        """Toggles active state."""
+        """Toggles active state for manual mode."""
         with self._lock:
             self.is_active = active
         if self.on_state_change:
@@ -108,12 +115,25 @@ class ClickPasteController:
         threading.Thread(target=_beep, daemon=True).start()
 
     def _on_key_press(self, key):
-        """Handles hotkey triggers (F8: toggle, Esc: stop)."""
+        """Handles hotkey triggers (F7: capture, F8: toggle, Esc: stop)."""
         try:
-            if key == keyboard.Key.f8:
-                self.toggle_active()
+            if key == keyboard.Key.f7:
+                # Capture current mouse position
+                pos = self._mouse_controller.position
+                if self.on_capture_hotkey:
+                    self.on_capture_hotkey(int(pos[0]), int(pos[1]))
+                self._play_sound(1500, 40)
+
+            elif key == keyboard.Key.f8:
+                if self.on_toggle_hotkey:
+                    self.on_toggle_hotkey()
+                else:
+                    self.toggle_active()
+
             elif key == keyboard.Key.esc:
-                if self.is_active:
+                if self.on_stop_hotkey:
+                    self.on_stop_hotkey()
+                elif self.is_active:
                     self.set_active(False)
         except Exception:
             pass
@@ -131,7 +151,6 @@ class ClickPasteController:
             if sys.platform == "win32" and self._app_window_hwnd:
                 pt = POINT(int(x), int(y))
                 hwnd_under_cursor = ctypes.windll.user32.WindowFromPoint(pt)
-                # Check root owner/parent of the window under cursor
                 curr = hwnd_under_cursor
                 while curr:
                     if curr == self._app_window_hwnd:
@@ -146,8 +165,10 @@ class ClickPasteController:
 
     def _on_mouse_click(self, x, y, button, pressed):
         """Called by pynput on any mouse button event."""
-        # We only care when left button is RELEASED or PRESSED.
-        # Pressed is best to initiate paste immediately after focus delay.
+        # Only handle clicks in manual mode
+        if self.config.mode != "manual":
+            return
+
         if not pressed or button != mouse.Button.left:
             return
 

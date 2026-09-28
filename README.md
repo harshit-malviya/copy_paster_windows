@@ -7,7 +7,14 @@ A modern Windows automation application that sequentially pastes items from your
 ## ✨ Features
 
 - **Sequential Left-Click Pasting**: Automatically pastes the next item from your queue into whichever external application (Excel, SAP, Web Browser, CRM, ERP, Notepad) you left-click into.
-- **Custom Skip Pattern Sequences**:
+- **Dual Automation Modes**:
+  - **Manual Click Mode**: You click where you want; the tool pastes sequentially from your queue based on your skip pattern.
+  - **Auto-Clicker Mode**: The application automatically moves your mouse cursor, clicks at defined screen locations, and pastes entries one-by-one.
+- **Interactive Coordinate Capture (F7)**:
+  - In Auto-Clicker mode, simply hover your mouse over any input box or button on your screen and press **`F7`** to record its `(X, Y)` position instantly.
+- **Multi-Point Sequences per Item**:
+  - Define 1 or multiple points per entry (e.g., Point 1: *Click & Paste*, Point 2: *Click Submit/Next Button*).
+- **Custom Skip Pattern Sequences (Manual Mode)**:
   - `P` : Pastes on every left click.
   - `P, S` : 1st click pastes, 2nd click skips, 3rd click pastes (alternating clicks).
   - `P, S, S` : 1st click pastes, next 2 clicks skip, 4th click pastes (1 in 3 clicks).
@@ -18,9 +25,11 @@ A modern Windows automation application that sequentially pastes items from your
 - **Safety Window-Boundary Detection**:
   - Clicks made inside the Click-to-Paste application window (clicking buttons, scrolling, adjusting settings) are **automatically ignored** so they never consume an item or paste into the app.
 - **Global Hotkeys**:
-  - `F8`: Toggle active state (Arm / Pause).
-  - `Esc`: Emergency stop (instantly disarms).
+  - `F7`: Grab & record mouse coordinate under cursor.
+  - `F8`: Toggle active state (Start / Pause).
+  - `Esc`: Emergency stop (instantly aborts automation).
 - **Timing & Post-Paste Actions**:
+  - Auto-Clicker pacing slider (0.2s – 5.0s between items).
   - Focus delay slider (20ms – 400ms, default 80ms) to ensure target input fields gain focus before text insertion.
   - Post-paste keystroke: `None (Just Paste)`, `Press Tab`, `Press Enter`, or `Press Down Arrow`.
   - Audio confirmation beeps (distinct frequencies for Paste vs Skip).
@@ -79,15 +88,17 @@ pyinstaller --noconfirm --onefile --windowed --name "ClickToPaste" --collect-all
 
 ## 🎯 How to Use
 
-1. **Load Your Data**:
-   - Click **"📁 Import File..."** to load a `.txt`, `.csv`, or `.xlsx` file, or click **"📋 Paste Text / Queue"** to paste rows directly from your clipboard.
-2. **Select or Configure Your Pattern**:
-   - For alternate clicks (paste, then don't paste, then paste), choose **`P, S`**.
-3. **Start Automation**:
-   - Click **▶ START AUTOMATION** or press **`F8`** on your keyboard.
-   - The status bar turns into active mode.
-4. **Click in Target Field**:
-   - Left-click into your target input cell or text box in Excel, SAP, browser, etc.
-   - The value is automatically pasted and the step advances!
-5. **Pause or Finish**:
-   - Press **`F8`** anytime to pause, or **`Esc`** to stop.
+### Mode A: Manual Click Mode
+1. **Load Your Data**: Click **"📁 Import File..."** or **"📋 Paste Text / Queue"**.
+2. **Set Pattern**: Choose **`P, S`** for alternating clicks (paste on 1st click, skip on 2nd click).
+3. **Arm Automation**: Press **`F8`** or click **▶ START AUTOMATION**.
+4. **Click into Fields**: Left-click into your target software (Excel, SAP, Browser) — it pastes automatically!
+
+### Mode B: Auto-Clicker Mode (Defined Screen Locations)
+1. **Switch Tab**: Click the **🤖 Auto-Clicker Mode** tab at the top right.
+2. **Define Screen Points**:
+   - Hover your mouse over your target input field on screen and press **`F7`** to record Point #1 (set to *Click & Paste Item*).
+   - (Optional) Hover your mouse over a "Submit" or "Next" button and press **`F7`** to record Point #2 (set to *Just Click*).
+3. **Set Interval**: Adjust the **Interval Between Items** slider (e.g. 1.0s).
+4. **Run**: Press **`F8`** or click **▶ START AUTO-CLICKER**. The tool automatically loops through your items, clicking and pasting into each defined coordinate!
+5. **Emergency Stop**: Press **`Esc`** at any second to immediately abort.

@@ -1,5 +1,6 @@
-"""CustomTkinter Graphical User Interface for Click-to-Paste."""
+"""CustomTkinter Graphical User Interface for Click-to-Paste and Auto-Clicker."""
 
+import ctypes
 import os
 import sys
 import tkinter as tk
@@ -8,13 +9,27 @@ from typing import Optional
 
 import customtkinter as ctk
 
+from src.auto_clicker import AutoClicker
 from src.click_listener import ClickPasteController
 from src.config import (
+    POINT_ACTION_CLICK,
+    POINT_ACTION_DOUBLE_CLICK,
+    POINT_ACTION_PASTE,
+    POINT_ACTIONS,
     POST_ACTIONS,
     AppConfig,
+    ClickPoint,
 )
 from src.pattern_engine import PatternEngine
 from src.queue_manager import QueueManager
+
+class POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+def get_mouse_position() -> tuple:
+    pt = POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    return int(pt.x), int(pt.y)
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -31,24 +46,35 @@ class ClickPasteApp(ctk.CTk):
         self.config = config
 
         self.title("⚡ Click-to-Paste Automation")
-        self.geometry("980x680")
-        self.minsize(860, 580)
+        self.geometry("1040x720")
+        self.minsize(920, 620)
 
         # Set always on top from config
         self.attributes("-topmost", self.config.always_on_top)
 
-        # Controller initialized
+        # Controllers
         self.controller = ClickPasteController(
             queue_mgr=self.queue_mgr,
             pattern_eng=self.pattern_eng,
             config=self.config,
-            on_state_change=self._on_state_changed,
+            on_state_change=self._on_manual_state_changed,
             on_item_pasted=self._on_item_pasted,
             on_step_updated=self._on_step_updated,
             on_queue_finished=self._on_queue_finished,
+            on_capture_hotkey=self._on_capture_hotkey,
+            on_toggle_hotkey=self._on_toggle_hotkey,
+            on_stop_hotkey=self._on_stop_hotkey,
         )
 
-        # Provide window coordinate getter to controller to ignore clicks inside app
+        self.auto_clicker = AutoClicker(
+            queue_mgr=self.queue_mgr,
+            config=self.config,
+            on_state_change=self._on_auto_state_changed,
+            on_item_processed=self._on_item_pasted,
+            on_finished=self._on_queue_finished,
+        )
+
+        # Window coordinate getter to ignore clicks inside app in manual mode
         self.controller.set_app_window_getter(
             bbox_fn=self._get_window_bbox,
             hwnd=self._get_window_hwnd(),
@@ -56,6 +82,9 @@ class ClickPasteApp(ctk.CTk):
 
         self._build_ui()
         self.controller.start_listeners()
+
+        # Mouse coordinate polling for UI helper
+        self._poll_mouse_coords()
 
         # Handle window close cleanup
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -79,8 +108,17 @@ class ClickPasteApp(ctk.CTk):
         except Exception:
             return None
 
+    def _poll_mouse_coords(self):
+        """Continuously updates the current cursor coordinate preview label."""
+        try:
+            if hasattr(self, "mouse_pos_lbl") and self.winfo_exists():
+                x, y = get_mouse_position()
+                self.mouse_pos_lbl.configure(text=f"Mouse Hover: X={x}, Y={y}")
+        except Exception:
+            pass
+        self.after(100, self._poll_mouse_coords)
+
     def _build_ui(self):
-        # Grid layout (Header, Main Body, Footer)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
@@ -91,7 +129,7 @@ class ClickPasteApp(ctk.CTk):
 
         title_label = ctk.CTkLabel(
             header,
-            text="⚡ Click-to-Paste Automation",
+            text="⚡ Click-to-Paste & Auto-Clicker",
             font=ctk.CTkFont(size=20, weight="bold"),
             text_color="#38bdf8",
         )
@@ -100,7 +138,7 @@ class ClickPasteApp(ctk.CTk):
         # Global Hotkey Guide
         hotkey_lbl = ctk.CTkLabel(
             header,
-            text="Toggle: [ F8 ]   |   Stop: [ Esc ]",
+            text="Toggle: [ F8 ]  |  Stop: [ Esc ]  |  Capture: [ F7 ]",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color="#94a3b8",
         )
@@ -120,8 +158,8 @@ class ClickPasteApp(ctk.CTk):
         # Main Body - Two Columns
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.grid(row=1, column=0, sticky="nsew", padx=16, pady=12)
-        body.grid_columnconfigure(0, weight=6)  # Left panel (Queue)
-        body.grid_columnconfigure(1, weight=4)  # Right panel (Settings & Controls)
+        body.grid_columnconfigure(0, weight=5)  # Left panel (Queue)
+        body.grid_columnconfigure(1, weight=5)  # Right panel (Settings & Controls)
         body.grid_rowconfigure(0, weight=1)
 
         self._build_left_panel(body)
@@ -230,23 +268,22 @@ class ClickPasteApp(ctk.CTk):
         right = ctk.CTkFrame(parent, corner_radius=10)
         right.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=0)
         right.grid_columnconfigure(0, weight=1)
+        right.grid_rowconfigure(2, weight=1)
 
-        # Big Main Trigger Button
-        self.toggle_btn = ctk.CTkButton(
+        # Mode Selector Tabs
+        self.mode_seg = ctk.CTkSegmentedButton(
             right,
-            text="▶ START AUTOMATION (F8)",
-            command=self.controller.toggle_active,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            height=54,
-            fg_color="#10b981",
-            hover_color="#059669",
-            corner_radius=8,
+            values=["🖱 Manual Click Mode", "🤖 Auto-Clicker Mode"],
+            command=self._on_mode_change,
+            height=34,
+            font=ctk.CTkFont(size=13, weight="bold"),
         )
-        self.toggle_btn.grid(row=0, column=0, sticky="ew", padx=16, pady=16)
+        self.mode_seg.set("🖱 Manual Click Mode")
+        self.mode_seg.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
 
-        # Spotlight Box (Current Item to be pasted)
+        # Spotlight Box (Always Visible)
         spotlight = ctk.CTkFrame(right, fg_color=("#1e293b", "#0f172a"), corner_radius=8)
-        spotlight.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 12))
+        spotlight.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 10))
 
         spotlight_hdr = ctk.CTkLabel(
             spotlight,
@@ -264,9 +301,38 @@ class ClickPasteApp(ctk.CTk):
         )
         self.spotlight_val.pack(anchor="w", padx=14, pady=(0, 8))
 
+        # Container for Switching Content between Manual and Auto
+        self.mode_container = ctk.CTkScrollableFrame(right, fg_color="transparent")
+        self.mode_container.grid(row=2, column=0, sticky="nsew", padx=12, pady=0)
+        self.mode_container.grid_columnconfigure(0, weight=1)
+
+        # Build Sub-Frames
+        self._build_manual_mode_view()
+        self._build_auto_mode_view()
+
+        # Default display manual mode
+        self._show_manual_view()
+
+    def _build_manual_mode_view(self):
+        self.manual_frame = ctk.CTkFrame(self.mode_container, fg_color="transparent")
+        self.manual_frame.grid_columnconfigure(0, weight=1)
+
+        # Manual Trigger Button
+        self.manual_toggle_btn = ctk.CTkButton(
+            self.manual_frame,
+            text="▶ START AUTOMATION (F8)",
+            command=self.controller.toggle_active,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            height=50,
+            fg_color="#10b981",
+            hover_color="#059669",
+            corner_radius=8,
+        )
+        self.manual_toggle_btn.pack(fill="x", pady=(4, 12))
+
         # Pattern Sequence Config Section
-        pat_frame = ctk.CTkFrame(right, corner_radius=8)
-        pat_frame.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 12))
+        pat_frame = ctk.CTkFrame(self.manual_frame, corner_radius=8)
+        pat_frame.pack(fill="x", pady=(0, 12))
         pat_frame.grid_columnconfigure(1, weight=1)
 
         pat_title = ctk.CTkLabel(
@@ -277,7 +343,6 @@ class ClickPasteApp(ctk.CTk):
         )
         pat_title.grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 6))
 
-        # Pattern entry
         pat_entry_lbl = ctk.CTkLabel(pat_frame, text="Sequence (P=Paste, S=Skip):", font=ctk.CTkFont(size=11))
         pat_entry_lbl.grid(row=1, column=0, sticky="w", padx=12, pady=2)
 
@@ -336,14 +401,134 @@ class ClickPasteApp(ctk.CTk):
         )
         self.step_tracker_lbl.grid(row=3, column=0, columnspan=2, sticky="w", padx=12, pady=(4, 10))
 
-        # Additional Options Frame
-        opt_frame = ctk.CTkFrame(right, corner_radius=8)
-        opt_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 12))
+        # Shared Options Frame
+        self._build_options_section(self.manual_frame)
+
+    def _build_auto_mode_view(self):
+        self.auto_frame = ctk.CTkFrame(self.mode_container, fg_color="transparent")
+        self.auto_frame.grid_columnconfigure(0, weight=1)
+
+        # Auto Trigger Button
+        self.auto_toggle_btn = ctk.CTkButton(
+            self.auto_frame,
+            text="▶ START AUTO-CLICKER (F8)",
+            command=self._toggle_auto_clicker,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            height=50,
+            fg_color="#10b981",
+            hover_color="#059669",
+            corner_radius=8,
+        )
+        self.auto_toggle_btn.pack(fill="x", pady=(4, 10))
+
+        # Points Manager Section
+        pts_frame = ctk.CTkFrame(self.auto_frame, corner_radius=8)
+        pts_frame.pack(fill="x", pady=(0, 10))
+        pts_frame.grid_columnconfigure(0, weight=1)
+
+        pts_hdr_row = ctk.CTkFrame(pts_frame, fg_color="transparent")
+        pts_hdr_row.pack(fill="x", padx=12, pady=(10, 4))
+
+        pts_title = ctk.CTkLabel(
+            pts_hdr_row,
+            text="🎯 Click Sequence Points",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#f8fafc",
+        )
+        pts_title.pack(side="left")
+
+        # Live Hover Coordinate Label
+        self.mouse_pos_lbl = ctk.CTkLabel(
+            pts_hdr_row,
+            text="Mouse Hover: X=0, Y=0",
+            font=ctk.CTkFont(family="Consolas", size=11),
+            text_color="#38bdf8",
+        )
+        self.mouse_pos_lbl.pack(side="right")
+
+        # Container for point cards
+        self.points_list_container = ctk.CTkFrame(pts_frame, fg_color="transparent")
+        self.points_list_container.pack(fill="x", padx=12, pady=4)
+
+        # Buttons to add points
+        add_btn_row = ctk.CTkFrame(pts_frame, fg_color="transparent")
+        add_btn_row.pack(fill="x", padx=12, pady=(6, 10))
+
+        capture_btn = ctk.CTkButton(
+            add_btn_row,
+            text="🎯 Capture Point (F7)",
+            command=self._capture_current_mouse_point,
+            fg_color="#0284c7",
+            hover_color="#0369a1",
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        )
+        capture_btn.pack(side="left", padx=(0, 6))
+
+        manual_pt_btn = ctk.CTkButton(
+            add_btn_row,
+            text="➕ Add Custom (X, Y)",
+            command=self._add_custom_point_dialog,
+            fg_color="#334155",
+            hover_color="#475569",
+            height=28,
+            font=ctk.CTkFont(size=11),
+        )
+        manual_pt_btn.pack(side="left", padx=6)
+
+        clear_pts_btn = ctk.CTkButton(
+            add_btn_row,
+            text="Clear Points",
+            command=self._clear_auto_points,
+            fg_color="#ef4444",
+            hover_color="#dc2626",
+            width=80,
+            height=28,
+            font=ctk.CTkFont(size=11),
+        )
+        clear_pts_btn.pack(side="right")
+
+        # Auto Pacing Interval
+        pacing_frame = ctk.CTkFrame(self.auto_frame, corner_radius=8)
+        pacing_frame.pack(fill="x", pady=(0, 10))
+        pacing_frame.grid_columnconfigure(1, weight=1)
+
+        pacing_hdr = ctk.CTkLabel(
+            pacing_frame,
+            text="⏱ Interval Between Items:",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        pacing_hdr.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 4))
+
+        self.pacing_val_lbl = ctk.CTkLabel(
+            pacing_frame,
+            text=f"{self.config.auto_item_delay_sec:.1f} s",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#38bdf8",
+        )
+        self.pacing_val_lbl.grid(row=0, column=1, sticky="e", padx=12, pady=(10, 4))
+
+        self.pacing_slider = ctk.CTkSlider(
+            pacing_frame,
+            from_=0.2,
+            to=5.0,
+            number_of_steps=48,
+            command=self._on_pacing_change,
+        )
+        self.pacing_slider.set(self.config.auto_item_delay_sec)
+        self.pacing_slider.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 10))
+
+        # Shared Options in Auto Frame
+        self._build_options_section(self.auto_frame)
+
+    def _build_options_section(self, parent):
+        opt_frame = ctk.CTkFrame(parent, corner_radius=8)
+        opt_frame.pack(fill="x", pady=(0, 12))
         opt_frame.grid_columnconfigure(1, weight=1)
 
         opt_title = ctk.CTkLabel(
             opt_frame,
-            text="⚙ Options & Timing",
+            text="⚙ Timing & Key Actions",
             font=ctk.CTkFont(size=13, weight="bold"),
         )
         opt_title.grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 6))
@@ -352,61 +537,209 @@ class ClickPasteApp(ctk.CTk):
         delay_lbl = ctk.CTkLabel(opt_frame, text="Focus Delay (ms):", font=ctk.CTkFont(size=11))
         delay_lbl.grid(row=1, column=0, sticky="w", padx=12, pady=4)
 
-        self.delay_val_lbl = ctk.CTkLabel(
+        delay_val_lbl = ctk.CTkLabel(
             opt_frame,
             text=f"{self.config.focus_delay_ms} ms",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color="#38bdf8",
         )
-        self.delay_val_lbl.grid(row=1, column=1, sticky="e", padx=12, pady=4)
+        delay_val_lbl.grid(row=1, column=1, sticky="e", padx=12, pady=4)
 
-        self.delay_slider = ctk.CTkSlider(
+        delay_slider = ctk.CTkSlider(
             opt_frame,
             from_=20,
             to=400,
             number_of_steps=38,
-            command=self._on_delay_change,
+            command=lambda val, lbl=delay_val_lbl: self._on_delay_change(val, lbl),
         )
-        self.delay_slider.set(self.config.focus_delay_ms)
-        self.delay_slider.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 8))
+        delay_slider.set(self.config.focus_delay_ms)
+        delay_slider.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 8))
 
         # Post Paste Action
         post_lbl = ctk.CTkLabel(opt_frame, text="Post-Paste Key:", font=ctk.CTkFont(size=11))
         post_lbl.grid(row=3, column=0, sticky="w", padx=12, pady=4)
 
-        self.post_combo = ctk.CTkComboBox(
+        post_combo = ctk.CTkComboBox(
             opt_frame,
             values=POST_ACTIONS,
             command=self._on_post_action_change,
             height=28,
             font=ctk.CTkFont(size=11),
         )
-        self.post_combo.set(self.config.post_paste_action)
-        self.post_combo.grid(row=3, column=1, sticky="ew", padx=12, pady=4)
+        post_combo.set(self.config.post_paste_action)
+        post_combo.grid(row=3, column=1, sticky="ew", padx=12, pady=4)
 
         # Sound switch
-        self.sound_switch = ctk.CTkSwitch(
+        sound_switch = ctk.CTkSwitch(
             opt_frame,
             text="Sound Feedback (Beeps)",
-            command=self._toggle_sound,
+            command=lambda: self._toggle_sound(sound_switch),
             font=ctk.CTkFont(size=11),
         )
         if self.config.sound_feedback:
-            self.sound_switch.select()
-        self.sound_switch.grid(row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 12))
+            sound_switch.select()
+        sound_switch.grid(row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 12))
 
-    # Event Handlers & Helpers
+    def _on_mode_change(self, selected_mode: str):
+        if "Auto" in selected_mode:
+            self.config.mode = "auto"
+            self._show_auto_view()
+            self._update_status("Auto-Clicker Mode selected. Add target points using F7, then press F8 to run.")
+        else:
+            self.config.mode = "manual"
+            self._show_manual_view()
+            self._update_status("Manual Click Mode selected. Press F8 or click Start to arm.")
+
+    def _show_manual_view(self):
+        self.auto_frame.pack_forget()
+        self.manual_frame.pack(fill="both", expand=True)
+
+    def _show_auto_view(self):
+        self.manual_frame.pack_forget()
+        self.auto_frame.pack(fill="both", expand=True)
+        self._refresh_points_ui()
+
+    # Auto-Clicker Point Management
+    def _capture_current_mouse_point(self):
+        x, y = get_mouse_position()
+        self._add_point_coord(x, y)
+
+    def _on_capture_hotkey(self, x: int, y: int):
+        self.after(0, lambda: self._add_point_coord(x, y))
+
+    def _add_point_coord(self, x: int, y: int):
+        # Default action: first point pastes, subsequent points just click
+        default_act = POINT_ACTION_PASTE if len(self.config.auto_points) == 0 else POINT_ACTION_CLICK
+        new_pt = ClickPoint(x=x, y=y, action=default_act)
+        self.config.auto_points.append(new_pt)
+        self._refresh_points_ui()
+        self._update_status(f"Recorded Point #{len(self.config.auto_points)} at (X={x}, Y={y})")
+
+    def _add_custom_point_dialog(self):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Add Point")
+        dialog.geometry("320x220")
+        dialog.attributes("-topmost", True)
+
+        x_entry = ctk.CTkEntry(dialog, placeholder_text="X (pixels)")
+        x_entry.pack(padx=20, pady=(20, 8), fill="x")
+
+        y_entry = ctk.CTkEntry(dialog, placeholder_text="Y (pixels)")
+        y_entry.pack(padx=20, pady=8, fill="x")
+
+        def _save():
+            try:
+                x = int(x_entry.get().strip())
+                y = int(y_entry.get().strip())
+                self._add_point_coord(x, y)
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Invalid Input", "Please enter valid integers for X and Y coordinates.")
+
+        btn = ctk.CTkButton(dialog, text="Add Point", command=_save, fg_color="#0284c7")
+        btn.pack(padx=20, pady=16, fill="x")
+
+    def _clear_auto_points(self):
+        self.config.auto_points.clear()
+        self._refresh_points_ui()
+        self._update_status("All auto-click points cleared.")
+
+    def _refresh_points_ui(self):
+        for widget in self.points_list_container.winfo_children():
+            widget.destroy()
+
+        if not self.config.auto_points:
+            empty_lbl = ctk.CTkLabel(
+                self.points_list_container,
+                text="No target points set.\nHover mouse over target and press F7 to record.",
+                font=ctk.CTkFont(size=12),
+                text_color="#64748b",
+            )
+            empty_lbl.pack(pady=12)
+            return
+
+        for idx, pt in enumerate(self.config.auto_points):
+            row = ctk.CTkFrame(self.points_list_container, fg_color=("#1e293b", "#0f172a"), corner_radius=6)
+            row.pack(fill="x", pady=3)
+            row.grid_columnconfigure(1, weight=1)
+
+            lbl = ctk.CTkLabel(
+                row,
+                text=f"#{idx+1}  ({pt.x}, {pt.y})",
+                font=ctk.CTkFont(family="Consolas", size=12, weight="bold"),
+                text_color="#38bdf8",
+            )
+            lbl.grid(row=0, column=0, padx=(10, 8), pady=6, sticky="w")
+
+            combo = ctk.CTkComboBox(
+                row,
+                values=POINT_ACTIONS,
+                command=lambda val, p=pt: self._on_point_action_change(p, val),
+                height=26,
+                font=ctk.CTkFont(size=11),
+                width=160,
+            )
+            combo.set(pt.action)
+            combo.grid(row=0, column=1, padx=6, pady=6, sticky="ew")
+
+            del_btn = ctk.CTkButton(
+                row,
+                text="✕",
+                command=lambda i=idx: self._delete_point(i),
+                width=28,
+                height=26,
+                fg_color="#ef4444",
+                hover_color="#dc2626",
+                font=ctk.CTkFont(size=11, weight="bold"),
+            )
+            del_btn.grid(row=0, column=2, padx=(6, 10), pady=6)
+
+    def _on_point_action_change(self, pt: ClickPoint, action: str):
+        pt.action = action
+
+    def _delete_point(self, index: int):
+        if 0 <= index < len(self.config.auto_points):
+            self.config.auto_points.pop(index)
+            self._refresh_points_ui()
+
+    def _toggle_auto_clicker(self):
+        if not self.config.auto_points:
+            messagebox.showwarning("No Points", "Please define at least one target screen point before starting.\n(Hover mouse and press F7)")
+            return
+        if not self.queue_mgr.has_next():
+            messagebox.showwarning("Queue Empty", "Please load items into the queue first.")
+            return
+
+        self.auto_clicker.toggle()
+
+    def _on_pacing_change(self, val):
+        self.config.auto_item_delay_sec = float(val)
+        self.pacing_val_lbl.configure(text=f"{self.config.auto_item_delay_sec:.1f} s")
+
+    # Global Hotkey Handlers
+    def _on_toggle_hotkey(self):
+        if self.config.mode == "auto":
+            self.after(0, self._toggle_auto_clicker)
+        else:
+            self.controller.toggle_active()
+
+    def _on_stop_hotkey(self):
+        self.auto_clicker.stop()
+        if self.controller.is_active:
+            self.controller.set_active(False)
+
+    # General Event Handlers
     def _toggle_always_on_top(self):
         self.config.always_on_top = bool(self.top_switch.get())
         self.attributes("-topmost", self.config.always_on_top)
 
-    def _toggle_sound(self):
-        self.config.sound_feedback = bool(self.sound_switch.get())
+    def _toggle_sound(self, switch_widget):
+        self.config.sound_feedback = bool(switch_widget.get())
 
-    def _on_delay_change(self, value):
+    def _on_delay_change(self, value, lbl):
         delay = int(value)
         self.config.focus_delay_ms = delay
-        self.delay_val_lbl.configure(text=f"{delay} ms")
+        lbl.configure(text=f"{delay} ms")
 
     def _on_post_action_change(self, value):
         self.config.post_paste_action = value
@@ -461,8 +794,7 @@ class ClickPasteApp(ctk.CTk):
         txt_box = ctk.CTkTextbox(dialog, font=ctk.CTkFont(family="Consolas", size=12))
         txt_box.pack(fill="both", expand=True, padx=16, pady=8)
 
-        # Checkbox for skip header
-        skip_header_var = tk.BooleanVar(value=True)
+        skip_header_var = tk.BooleanVar(value=False)
         cb = ctk.CTkCheckBox(dialog, text="Skip first line (Header)", variable=skip_header_var)
         cb.pack(padx=16, pady=4, anchor="w")
 
@@ -515,12 +847,10 @@ class ClickPasteApp(ctk.CTk):
 
         self.queue_box.configure(state="disabled")
 
-        # Scroll to current index line
         if items:
             frac = curr_idx / max(1, len(items))
             self.queue_box.yview_moveto(max(0.0, frac - 0.1))
 
-        # Update stats
         total = self.queue_mgr.total
         completed = self.queue_mgr.completed
         rem = self.queue_mgr.remaining
@@ -531,7 +861,6 @@ class ClickPasteApp(ctk.CTk):
         progress = completed / total if total > 0 else 0.0
         self.progress_bar.set(progress)
 
-        # Update spotlight
         curr_item = self.queue_mgr.get_current_item()
         if curr_item:
             self.spotlight_val.configure(text=curr_item, text_color="#38bdf8")
@@ -544,22 +873,40 @@ class ClickPasteApp(ctk.CTk):
         self.footer_lbl.configure(text=text)
 
     # Controller Callbacks
-    def _on_state_changed(self, is_active: bool):
+    def _on_manual_state_changed(self, is_active: bool):
         def _update():
             if is_active:
-                self.toggle_btn.configure(
+                self.manual_toggle_btn.configure(
                     text="⏸ PAUSE AUTOMATION (F8)",
                     fg_color="#ef4444",
                     hover_color="#dc2626",
                 )
                 self._update_status("● ARMED & ACTIVE: Left-clicking external target will paste according to pattern.")
             else:
-                self.toggle_btn.configure(
+                self.manual_toggle_btn.configure(
                     text="▶ START AUTOMATION (F8)",
                     fg_color="#10b981",
                     hover_color="#059669",
                 )
                 self._update_status("Paused. Press F8 or click Start to resume.")
+        self.after(0, _update)
+
+    def _on_auto_state_changed(self, is_running: bool):
+        def _update():
+            if is_running:
+                self.auto_toggle_btn.configure(
+                    text="⏸ PAUSE AUTO-CLICKER (F8)",
+                    fg_color="#ef4444",
+                    hover_color="#dc2626",
+                )
+                self._update_status("● AUTO-CLICKER RUNNING: Automated clicking & pasting in progress. Press Esc to stop.")
+            else:
+                self.auto_toggle_btn.configure(
+                    text="▶ START AUTO-CLICKER (F8)",
+                    fg_color="#10b981",
+                    hover_color="#059669",
+                )
+                self._update_status("Auto-Clicker paused. Press F8 to resume.")
         self.after(0, _update)
 
     def _on_item_pasted(self, item: str, completed: int, total: int):
@@ -574,10 +921,11 @@ class ClickPasteApp(ctk.CTk):
     def _on_queue_finished(self):
         def _update():
             self._refresh_queue_view()
-            self._update_status("Queue finished! All items have been pasted.")
-            messagebox.showinfo("Done", "All items in the queue have been successfully pasted!")
+            self._update_status("Queue finished! All items have been processed.")
+            messagebox.showinfo("Done", "All items in the queue have been successfully processed!")
         self.after(0, _update)
 
     def _on_close(self):
+        self.auto_clicker.stop()
         self.controller.stop_listeners()
         self.destroy()

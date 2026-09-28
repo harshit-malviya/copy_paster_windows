@@ -18,6 +18,8 @@ pip install -r requirements.txt
 echo [*] Running PyInstaller build...
 pyinstaller --noconfirm --onedir --windowed ^
     --name "ClickToPaste" ^
+    --icon "assets/icon.ico" ^
+    --add-data "assets;assets" ^
     --collect-all "customtkinter" ^
     main.py
 

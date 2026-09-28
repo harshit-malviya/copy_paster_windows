@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox
 from typing import Optional
 
 import customtkinter as ctk
+from PIL import Image
 
 from src.auto_clicker import AutoClicker
 from src.click_listener import ClickPasteController
@@ -33,6 +34,12 @@ def get_mouse_position() -> tuple:
     ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
     return int(pt.x), int(pt.y)
 
+def get_asset_path(filename: str) -> str:
+    """Returns absolute path to asset file, compatible with PyInstaller bundles."""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, "assets", filename)
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", filename)
+
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
@@ -47,9 +54,27 @@ class ClickPasteApp(ctk.CTk):
         self.pattern_eng = pattern_eng
         self.config = config
 
-        self.title("⚡ Click-to-Paste Automation")
+        self.title("Click-to-Paste & Auto-Clicker")
         self.geometry("1040x720")
         self.minsize(920, 620)
+
+        # Set window icon (.ico)
+        ico_file = get_asset_path("icon.ico")
+        if os.path.exists(ico_file):
+            try:
+                self.iconbitmap(ico_file)
+            except Exception:
+                pass
+
+        # Load Logo image for header
+        self.logo_img = None
+        logo_file = get_asset_path("logo.png")
+        if os.path.exists(logo_file):
+            try:
+                pil_logo = Image.open(logo_file)
+                self.logo_img = ctk.CTkImage(light_image=pil_logo, dark_image=pil_logo, size=(36, 36))
+            except Exception:
+                pass
 
         # Set always on top from config
         self.attributes("-topmost", self.config.always_on_top)
@@ -129,13 +154,21 @@ class ClickPasteApp(ctk.CTk):
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(1, weight=1)
 
+        # Title Container with Logo
+        title_container = ctk.CTkFrame(header, fg_color="transparent")
+        title_container.grid(row=0, column=0, padx=18, pady=10, sticky="w")
+
+        if self.logo_img:
+            logo_label = ctk.CTkLabel(title_container, image=self.logo_img, text="")
+            logo_label.pack(side="left", padx=(0, 10))
+
         title_label = ctk.CTkLabel(
-            header,
-            text="⚡ Click-to-Paste & Auto-Clicker",
+            title_container,
+            text="Click-to-Paste & Auto-Clicker",
             font=ctk.CTkFont(size=20, weight="bold"),
             text_color="#38bdf8",
         )
-        title_label.grid(row=0, column=0, padx=20, pady=12, sticky="w")
+        title_label.pack(side="left")
 
         # Global Hotkey Guide
         hotkey_lbl = ctk.CTkLabel(

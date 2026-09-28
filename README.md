@@ -72,14 +72,14 @@ Make sure your virtual environment is active:
 
 #### Method A: Directory-based Build (Fast startup & recommended)
 ```powershell
-pyinstaller --noconfirm --onedir --windowed --name "ClickToPaste" --collect-all "customtkinter" main.py
+pyinstaller --noconfirm --onedir --windowed --name "ClickToPaste" --icon "assets/icon.ico" --add-data "assets;assets" --collect-all "customtkinter" main.py
 ```
 > The output executable will be located in:  
 > `dist\ClickToPaste\ClickToPaste.exe`
 
 #### Method B: Single-file Executable (Portable single `.exe`)
 ```powershell
-pyinstaller --noconfirm --onefile --windowed --name "ClickToPaste" --collect-all "customtkinter" main.py
+pyinstaller --noconfirm --onefile --windowed --name "ClickToPaste" --icon "assets/icon.ico" --add-data "assets;assets" --collect-all "customtkinter" main.py
 ```
 > The standalone executable will be located in:  
 > `dist\ClickToPaste.exe`
